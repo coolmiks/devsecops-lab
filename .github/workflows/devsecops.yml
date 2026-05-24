@@ -1,0 +1,24 @@
+name: DEVSECOPS Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          path: "django.nv"
+          
+      - name: App in docker
+        run: |
+          docker stop $(docker ps | grep 8000 | cut -d' ' -f1) || true
+          docker build -t djangolocal django.nv
+          docker run -p 8000:8000 -d djangolocal

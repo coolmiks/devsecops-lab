@@ -8,17 +8,56 @@ on:
   workflow_dispatch:
 
 jobs:
+  # ETAP 1: SAST (Analiza statyczna - skanowanie kodu i zależności)
+  sast:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+        # Usunięto problematyczny 'path', kod pobiera się prosto do głównego folderu roboczego
+
+      - name: Secret Scanning (Trufflehog)
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          extra_args: "--only-verified"
+        continue-on-error: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.8'
+
+      - name: Dependency Scanning (Safety)
+        run: |
+          pip install safety
+          safety check -r requirements.txt || true
+
+      - name: Logic Scanning (AppThreat / sast-scan)
+        uses: AppThreat/sast-scan-action@master
+        with:
+          type: "python"
+          src: "/github/workspace"
+        continue-on-error: true
+
+  # ETAP 2 i 3: BUILD oraz DAST (Analiza dynamiczna)
   build:
     runs-on: ubuntu-latest
+    needs: sast # Odkomentowane, czeka na zakończenie SAST
     
     steps:
       - name: Checkout
         uses: actions/checkout@v2
-        with:
-          path: "django.nv"
           
       - name: App in docker
         run: |
           docker stop $(docker ps | grep 8000 | cut -d' ' -f1) || true
-          docker build -t djangolocal django.nv
+          docker build -t djangolocal . 
           docker run -p 8000:8000 -d djangolocal
+          sleep 15 # Czekamy, aż serwer Django w pełni się uruchomi
+
+      - name: DAST (OWASP ZAP)
+        uses: zaproxy/action-baseline@v0.10.0
+        with:
+          target: 'http://localhost:8000'
+          fail_action: false
